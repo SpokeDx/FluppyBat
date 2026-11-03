@@ -1,0 +1,278 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;800&display=swap');
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Nunito', sans-serif;
+            user-select: none;
+            background-color: #030712;
+        }
+
+        .font-game {
+            font-family: 'Fredoka One', cursive;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center w-full h-full relative">
+
+    <canvas id="gameCanvas" class="absolute inset-0 w-full h-full block cursor-pointer"></canvas>
+
+    <div id="hud" class="absolute top-6 left-0 right-0 flex flex-col items-center pointer-events-none z-10 hidden">
+        <div id="scoreDisplay" class="text-5xl font-game text-white drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)]">0</div>
+        <div id="biomeDisplay" 
+             class="text-xs font-bold 
+             uppercase tracking-widest 
+             text-amber-400 mt-1 bg-black/50 
+             px-4 py-1.5 rounded-full 
+             backdrop-blur-md 
+             border border-amber-500/30">
+        Пещера 1</div>
+    </div>
+
+    <div id="uiOverlay" class="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-20">
+        <div id="startScreen" class="max-w-md">
+            <h1 class="text-4xl md:text-5xl font-game text-amber-400 mb-2 drop-shadow-md">ПОЛЕТ В ПЕЩЕРЕ</h1>
+            <p class="text-sm text-slate-300 mb-6 leading-relaxed">
+                Кликайте мышкой или жмите <kbd class="px-2.5 py-1 bg-slate-800 border border-slate-600 rounded text-amber-400 font-bold">Пробел</kbd>!
+            </p>
+            <button onclick="startGame()" 
+                    class="px-8 py-4 
+                    bg-gradient-to-r 
+                    from-amber-500 to-amber-600 
+                    hover:from-amber-400 hover:to-amber-500 
+                    font-game 
+                    text-xl text-slate-950 
+                    rounded-2xl 
+                    shadow-[0_0_25px_rgba(245,158,11,0.4)] 
+                    transform active:scale-95 transition">
+                ИГРАТЬ
+            </button>
+        </div>
+
+        <div id="gameOverScreen" class="hidden flex-col items-center max-w-md">
+            <h2 class="text-3xl font-game text-red-400 mb-1">УДАР О СКАЛУ</h2>
+            <p class="text-xs text-slate-400 mb-4">Путь в темной пещере оборвался</p>
+
+            <div class="bg-slate-900/90 border border-slate-800 px-8 py-4 rounded-2xl mb-6 shadow-inner">
+                <div class="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Итоговый счёт</div>
+                <div class="text-5xl font-game text-amber-400" id="finalScore">0</div>
+            </div>
+
+            <button onclick="startGame()" 
+                    class="px-8 py-4 bg-gradient-to-r from-emerald-500 to-emerald-600 
+                    hover:from-emerald-400 hover:to-emerald-500 
+                    font-game text-xl text-white 
+                    rounded-2xl shadow-xl transform 
+                    active:scale-95 transition">ЕЩЕ РАЗ
+            </button>
+        </div>
+    </div>
+
+    <script>
+                const canvas = document.getElementById('gameCanvas');
+                const ctx = canvas.getContext('2d');
+
+                function resizeCanvas() {
+                    canvas.width = window.innerWidth;
+                    canvas.height = window.innerHeight;
+                }
+                window.addEventListener('resize', resizeCanvas);
+                resizeCanvas();
+
+                let isPlaying = false, score = 0, animId = null;
+                let bgScrollX = 0;
+                const bgSpeed = 1.2;
+
+                function loadImage(url) {
+                    const img = new Image();
+                    img.src = url;
+                    return img;
+                }
+
+                const backgroundImages = [];
+                for (let i = 0; i < 10; i++) {
+                    backgroundImages.push(loadImage(`images/bg${i}.jpg`));
+                }
+
+                const batUpImg = loadImage('images/bat_up.png');
+                const batDownImg = loadImage('images/bat_down.png');
+
+                const topRockImages = [5, 6, 7, 8, 9].map(i => loadImage(`images/rock${i}.png`));
+                const bottomRockImages = [0, 1, 2, 3, 4].map(i => loadImage(`images/rock${i}.png`));
+
+                const player = {
+                    x: 120, y: canvas.height / 2,
+                    width: 72, height: 56,
+                    velocity: 0, gravity: 0.22, glideVelocity: 3.5, jumpForce: -5.2
+                };
+
+                let obstacles = [];
+                const obsWidth = 150;
+                const obsGap = 230;
+                const obsSpeed = 3.2;
+
+                function jump() {
+                    if (isPlaying) player.velocity = player.jumpForce;
+                }
+
+                function gameLoop() {
+                    if (!isPlaying) return;
+
+                    // Физика мыши
+                    player.velocity += player.gravity;
+                    if (player.velocity > player.glideVelocity) player.velocity = player.glideVelocity;
+                    player.y += player.velocity;
+
+                    if (player.y <= 0 || player.y + player.height >= canvas.height - 70) {
+                        gameOver();
+                        return;
+                    }
+
+                    bgScrollX += bgSpeed;
+
+                    // Спавн препятствий
+                    if (obstacles.length === 0 || canvas.width - obstacles[obstacles.length - 1].x >= 380) {
+                        let centerScreen = canvas.height / 2;
+                        let delta = (Math.random() * 200 - 100);
+                        let topH = centerScreen - (obsGap / 2) + delta;
+
+                        let minH = 50;
+                        let maxHeight = canvas.height - obsGap - minH - 70;
+                        if (topH < minH) topH = minH;
+                        if (topH > maxHeight) topH = maxHeight;
+
+                        let randomTopRock = topRockImages[Math.floor(Math.random() * topRockImages.length)];
+                        let randomBottomRock = bottomRockImages[Math.floor(Math.random() * bottomRockImages.length)];
+
+                        obstacles.push({
+                            x: canvas.width,
+                            topHeight: topH,
+                            bottomY: topH + obsGap,
+                            passed: false,
+                            topRock: randomTopRock,
+                            bottomRock: randomBottomRock
+                        });
+                    }
+
+                    // Движение скал и подсчет очков
+                    for (let i = obstacles.length - 1; i >= 0; i--) {
+                        let o = obstacles[i];
+                        o.x -= obsSpeed;
+
+                        if (!o.passed && o.x + obsWidth < player.x) {
+                            o.passed = true;
+                            score++;
+                            document.getElementById('scoreDisplay').innerText = score;
+                            document.getElementById('biomeDisplay').innerText = `Пещера ${Math.floor(score / 20) + 1}`;
+                        }
+
+                        if (o.x + obsWidth < 0) obstacles.splice(i, 1);
+
+                        if (player.x + player.width * 0.75 > o.x && player.x + player.width * 0.25 < o.x + obsWidth) {
+                            if (player.y + player.height * 0.2 < o.topHeight || player.y + player.height * 0.8 > o.bottomY) {
+                                gameOver();
+                                return;
+                            }
+                        }
+                    }
+
+                    // Отрисовка фонов
+                    let bgIndex = Math.floor(score / 20) % backgroundImages.length;
+                    let currentBg = backgroundImages[bgIndex];
+
+                    if (currentBg && currentBg.complete && currentBg.naturalWidth !== 0) {
+                        let xPos = -(bgScrollX % canvas.width);
+                        ctx.drawImage(currentBg, xPos, 0, canvas.width, canvas.height);
+                        ctx.drawImage(currentBg, xPos + canvas.width, 0, canvas.width, canvas.height);
+                    } else {
+                        let grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                        grad.addColorStop(0, '#090d16');
+                        grad.addColorStop(0.5, '#1e1b4b');
+                        grad.addColorStop(1, '#31103f');
+                        ctx.fillStyle = grad;
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    }
+
+                    obstacles.forEach(o => {
+                        if (o.topRock && o.topRock.complete && o.topRock.naturalWidth !== 0) {
+                            ctx.drawImage(o.topRock, o.x, 0, obsWidth, o.topHeight);
+                        }
+
+                        let bottomHeight = canvas.height - 70 - o.bottomY;
+                        if (o.bottomRock && o.bottomRock.complete && o.bottomRock.naturalWidth !== 0) {
+                            ctx.drawImage(o.bottomRock, o.x, o.bottomY, obsWidth, bottomHeight);
+                        }
+                    });
+
+                    ctx.fillStyle = '#030712';
+                    ctx.fillRect(0, canvas.height - 70, canvas.width, 70);
+                    ctx.fillStyle = '#38bdf8';
+                    ctx.fillRect(0, canvas.height - 70, canvas.width, 8);
+
+                    //Рендер мыши
+                    ctx.save();
+                    ctx.translate(player.x + player.width / 2, player.y + player.height / 2);
+
+                    let isMovingUp = player.velocity < 0;
+
+                    if (isMovingUp && batUpImg.complete && batUpImg.naturalWidth !== 0) {
+                        ctx.drawImage(batUpImg, -player.width / 2, -player.height / 2, player.width, player.height);
+                    } else if (!isMovingUp && batDownImg.complete && batDownImg.naturalWidth !== 0) {
+                        ctx.drawImage(batDownImg, -player.width / 2, -player.height / 2, player.width, player.height);
+                    }
+
+                    ctx.restore();
+
+                    animId = requestAnimationFrame(gameLoop);
+                }
+
+                function startGame() {
+                    player.y = canvas.height / 2;
+                    player.velocity = 0;
+                    obstacles = [];
+                    score = 0;
+                    bgScrollX = 0;
+                    isPlaying = true;
+
+                    document.getElementById('uiOverlay').classList.add('hidden');
+                    document.getElementById('startScreen').classList.add('hidden');
+                    document.getElementById('gameOverScreen').classList.add('hidden');
+                    document.getElementById('hud').classList.remove('hidden');
+                    document.getElementById('hud').classList.add('flex');
+
+                    document.getElementById('scoreDisplay').innerText = "0";
+                    document.getElementById('biomeDisplay').innerText = "Пещера 1";
+
+                    if (animId) cancelAnimationFrame(animId);
+                    gameLoop();
+                }
+
+                function gameOver() {
+                    isPlaying = false;
+                    document.getElementById('finalScore').innerText = score;
+                    document.getElementById('hud').classList.add('hidden');
+                    document.getElementById('uiOverlay').classList.remove('hidden');
+                    document.getElementById('gameOverScreen').classList.remove('hidden');
+                    document.getElementById('gameOverScreen').classList.add('flex');
+                }
+
+                window.addEventListener('keydown', e => {
+                    if (e.code === 'Space') {
+                        e.preventDefault();
+                        jump();
+                    }
+                });
+                canvas.onclick = jump;
+    </script>
+</body>
+</html>
