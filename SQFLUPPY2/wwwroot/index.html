@@ -1,0 +1,1758 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.7/dist/browser/signalr.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;800&display=swap');
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Nunito', sans-serif;
+            user-select: none;
+            background-color: #030712;
+        }
+
+        .font-game {
+            font-family: 'Fredoka One', cursive;
+        }
+
+        .field {
+            width: 100%;
+            padding: 10px 14px;
+            border-radius: 12px;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid #334155;
+            color: #e2e8f0;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .field:focus { border-color: #f59e0b; }
+        .field::placeholder { color: #64748b; }
+
+        .btn {
+            padding: 10px 18px;
+            border-radius: 12px;
+            font-family: 'Fredoka One', cursive;
+            font-size: 15px;
+            transition: transform .08s ease, filter .15s ease;
+        }
+
+        .btn:active { transform: scale(0.96); }
+        .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+        .btn-amber { background: linear-gradient(90deg, #f59e0b, #d97706); color: #0f172a; }
+        .btn-amber:hover:not(:disabled) { filter: brightness(1.12); }
+
+        .btn-green { background: linear-gradient(90deg, #10b981, #059669); color: #fff; }
+        .btn-green:hover:not(:disabled) { filter: brightness(1.12); }
+
+        .btn-ghost { background: rgba(30, 41, 59, .85); color: #cbd5e1; border: 1px solid #334155; }
+        .btn-ghost:hover:not(:disabled) { filter: brightness(1.25); }
+
+        .panel {
+            background: rgba(15, 23, 42, .92);
+            border: 1px solid #1e293b;
+            border-radius: 18px;
+        }
+
+        .screen { max-width: 560px; width: 100%; }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center w-full h-full relative">
+
+    <canvas id="gameCanvas" class="absolute inset-0 w-full h-full block cursor-pointer"></canvas>
+
+    <div id="hud" class="absolute top-4 left-0 right-0 flex flex-col items-center pointer-events-none z-10 hidden">
+        <div id="scoreDisplay" class="text-5xl font-game text-white drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)]">0</div>
+        <div id="biomeDisplay"
+             class="text-xs font-bold uppercase tracking-widest text-amber-400 mt-1 bg-black/50 px-4 py-1.5 rounded-full backdrop-blur-md border border-amber-500/30">
+            Пещера 1</div>
+        <div id="readyHint"
+             class="hidden mt-3 text-[11px] font-bold uppercase tracking-widest text-emerald-200 bg-black/60 px-4 py-1.5 rounded-full border border-emerald-500/40 animate-pulse">
+            Пробел или клик — начать полёт</div>
+        <div id="netHud" class="hidden mt-2 flex items-center gap-2 text-[11px] font-bold text-slate-300">
+            <span class="bg-black/50 px-3 py-1 rounded-full border border-slate-700/60">Лобби <span id="hudCode">—</span></span>
+            <span class="bg-black/50 px-3 py-1 rounded-full border border-slate-700/60">Живых: <span id="hudAlive">0</span></span>
+        </div>
+        <div id="debugBadge"
+             class="hidden mt-2 text-[10px] font-bold uppercase tracking-widest text-emerald-300 bg-black/60 px-3 py-1 rounded-full border border-emerald-500/40">
+            Полигоны включены (H)</div>
+    </div>
+
+    <div id="spectatorBanner"
+         class="hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 text-center pointer-events-none">
+        <div class="text-3xl font-game text-red-400 drop-shadow-lg">ВЫ ВЫБЫЛИ</div>
+        <div class="text-xs text-slate-300 mt-1">Наблюдаете за раундом</div>
+    </div>
+
+    <div id="uiOverlay" class="absolute inset-0 bg-black/80 backdrop-blur-md flex flex-col items-center justify-center p-4 text-center z-20 overflow-y-auto">
+
+        <!-- ================= ГЛАВНОЕ МЕНЮ ================= -->
+        <div id="menuScreen" class="screen flex flex-col items-center">
+            <h1 class="text-4xl md:text-5xl font-game text-amber-400 mb-2 drop-shadow-md">ПОЛЕТ В ПЕЩЕРЕ</h1>
+            <p class="text-sm text-slate-300 mb-7 leading-relaxed">
+                Кликайте мышкой или жмите
+                <kbd class="px-2.5 py-1 bg-slate-800 border border-slate-600 rounded text-amber-400 font-bold">Пробел</kbd>!
+            </p>
+            <div class="flex flex-col gap-3 w-64">
+                <button onclick="startSoloGame()" class="btn btn-amber py-4 text-xl">ИГРАТЬ ОДНОМУ</button>
+                <button onclick="openOnlineMenu()" class="btn btn-green py-4 text-xl">СЕТЕВАЯ ИГРА</button>
+            </div>
+        </div>
+
+        <!-- ================= СЕТЕВАЯ ИГРА ================= -->
+        <div id="onlineScreen" class="screen hidden flex-col gap-4">
+            <div class="flex items-center justify-between">
+                <h2 class="text-3xl font-game text-amber-400">СЕТЕВАЯ ИГРА</h2>
+                <button onclick="showScreen('menuScreen')" class="btn btn-ghost px-3 py-1 text-xs">Назад</button>
+            </div>
+
+            <div class="panel p-4 text-left">
+                <label class="block text-[11px] uppercase tracking-widest text-slate-400 font-bold mb-1">Ваш ник</label>
+                <input id="nickname" class="field" maxlength="16" placeholder="До 16 символов" />
+                <div id="onlineError" class="hidden mt-2 text-xs font-bold text-red-400"></div>
+            </div>
+
+            <div class="panel p-4 text-left">
+                <div class="text-sm font-game text-emerald-400 mb-2">Создать лобби</div>
+                <div class="flex flex-col gap-2">
+                    <input id="createName" class="field" maxlength="32" placeholder="Название лобби (3–32 символа)" />
+                    <input id="createPassword" class="field" type="password" maxlength="64" placeholder="Пароль (необязательно)" />
+                    <button id="createButton" onclick="createLobby()" class="btn btn-green w-full">Создать и получить ссылку</button>
+                </div>
+            </div>
+
+            <div class="panel p-4 text-left">
+                <div class="text-sm font-game text-amber-400 mb-2">Войти по названию</div>
+                <div class="flex flex-col gap-2">
+                    <input id="joinName" class="field" maxlength="32" placeholder="Название лобби" />
+                    <input id="joinPassword" class="field" type="password" maxlength="64" placeholder="Пароль (если задан)" />
+                    <button id="joinNameButton" onclick="joinLobbyByName()" class="btn btn-amber w-full">Войти</button>
+                </div>
+            </div>
+
+            <div class="panel p-4 text-left">
+                <div class="text-sm font-game text-sky-400 mb-2">Войти по ссылке или коду</div>
+                <div class="flex flex-col gap-2">
+                    <input id="joinCode" class="field uppercase tracking-[0.3em] text-center" maxlength="6" placeholder="ABC123" />
+                    <button id="joinCodeButton" onclick="joinLobbyByCode()" class="btn btn-amber w-full">Войти по коду</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= ЛОББИ ================= -->
+        <div id="lobbyScreen" class="screen hidden flex-col gap-3">
+            <div class="panel p-4 text-left">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <div class="text-[11px] uppercase tracking-widest text-slate-400 font-bold">Лобби</div>
+                        <div id="lobbyName" class="text-2xl font-game text-amber-400 leading-tight"></div>
+                    </div>
+                    <button onclick="leaveLobby()" class="btn btn-ghost px-3 py-1 text-xs">Выйти</button>
+                </div>
+
+                <div class="mt-3 bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+                    <div class="text-[11px] uppercase tracking-widest text-slate-400 font-bold">Код</div>
+                    <div id="lobbyCode" class="text-3xl font-game text-emerald-400 tracking-[0.3em]"></div>
+                    <div class="mt-2 text-[11px] text-slate-500 break-all" id="lobbyLink"></div>
+                    <button onclick="copyInviteLink()" class="btn btn-ghost mt-2 w-full text-xs">Скопировать ссылку-приглашение</button>
+                </div>
+
+                <div class="mt-3 flex items-center justify-between text-xs text-slate-400 font-bold">
+                    <span>Игроки</span>
+                    <span id="lobbyCount" class="text-amber-400">0 / 16</span>
+                </div>
+                <div id="playersList" class="mt-2 flex flex-col gap-1.5 max-h-52 overflow-y-auto"></div>
+                <div id="lobbyStatus" class="mt-3 text-[11px] text-slate-400"></div>
+            </div>
+
+            <div id="hostControls" class="panel p-4 text-left hidden">
+                <div class="text-sm font-game text-amber-400 mb-2">Настройки хоста</div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Сложность</label>
+                        <select id="difficultySelect" class="field" onchange="applySettings()">
+                            <option value="easy">Легко</option>
+                            <option value="normal">Норм</option>
+                            <option value="hard">Сложно</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Биом</label>
+                        <select id="biomeModeSelect" class="field" onchange="applySettings()">
+                            <option value="auto">Авто-смена</option>
+                            <option value="fixed">Фиксированный</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="biomeIndexRow" class="mt-2 hidden">
+                    <label class="block text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Пещера</label>
+                    <select id="biomeIndexSelect" class="field" onchange="applySettings()"></select>
+                </div>
+                <div id="transferRow" class="mt-2 hidden">
+                    <label class="block text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-1">Передать хоста</label>
+                    <div class="flex gap-2">
+                        <select id="transferSelect" class="field"></select>
+                        <button onclick="transferHost()" class="btn btn-ghost text-xs px-3">ОК</button>
+                    </div>
+                </div>
+                <button id="startButton" onclick="startNetworkGame()" class="btn btn-green w-full mt-3 text-lg">СТАРТ</button>
+            </div>
+
+            <div id="guestNote" class="panel p-3 text-[11px] text-slate-400 hidden">
+                Ждём, пока хост запустит раунд.
+            </div>
+        </div>
+
+        <!-- ================= РЕЗУЛЬТАТЫ РАУНДА ================= -->
+        <div id="resultsScreen" class="screen hidden flex-col gap-3">
+            <h2 class="text-3xl font-game text-amber-400">ИТОГИ РАУНДА</h2>
+            <div class="panel p-3">
+                <div id="resultsList" class="flex flex-col gap-1.5"></div>
+            </div>
+            <button onclick="backToLobby()" class="btn btn-green w-full text-lg">ВЕРНУТЬСЯ В ЛОББИ</button>
+        </div>
+
+        <!-- ================= ОДИНОЧНАЯ ИГРА ================= -->
+        <div id="soloGameOverScreen" class="screen hidden flex-col items-center">
+            <h2 class="text-3xl font-game text-red-400 mb-1">УДАР О СКАЛУ</h2>
+            <p class="text-xs text-slate-400 mb-4">Путь в тёмной пещере оборвался</p>
+
+            <div class="bg-slate-900/90 border border-slate-800 px-8 py-4 rounded-2xl mb-6 shadow-inner">
+                <div class="text-[10px] text-slate-400 uppercase tracking-widest font-bold">Итоговый счёт</div>
+                <div class="text-5xl font-game text-amber-400" id="finalScore">0</div>
+            </div>
+
+            <div class="flex flex-col gap-2 w-64">
+                <button onclick="startSoloGame()" class="btn btn-green py-4 text-xl">ЕЩЁ РАЗ</button>
+                <button onclick="showScreen('menuScreen')" class="btn btn-ghost py-2 text-sm">В МЕНЮ</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /* ============================================================
+           Утилиты
+           ============================================================ */
+        const $ = id => document.getElementById(id);
+
+        function escapeHtml(value) {
+            return String(value ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function mulberry32(seed) {
+            let a = seed >>> 0;
+            return function () {
+                a = (a + 0x6D2B79F5) | 0;
+                let t = Math.imul(a ^ (a >>> 15), 1 | a);
+                t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+        }
+
+        function hashInt(text) {
+            let h = 2166136261;
+            for (let i = 0; i < text.length; i++) {
+                h ^= text.charCodeAt(i);
+                h = Math.imul(h, 16777619);
+            }
+            return h >>> 0;
+        }
+
+        const SERVER_ERRORS = {
+            lobby_not_found: 'Лобби не найдено',
+            lobby_full: 'В лобби уже 16 игроков',
+            name_taken: 'Лобби с таким названием уже существует',
+            nickname_taken: 'Этот ник уже занят в лобби',
+            wrong_password: 'Неверный пароль',
+            password_too_short: 'Пароль должен быть от 4 до 64 символов',
+            invalid_name: 'Название лобби — от 3 до 32 символов',
+            invalid_nickname: 'Ник — от 1 до 16 символов',
+            not_in_lobby: 'Вы не в лобби',
+            not_host: 'Это может сделать только хост',
+            already_playing: 'Раунд уже идёт',
+            not_playing: 'Раунд сейчас не идёт',
+            player_not_found: 'Игрок не найден',
+            already_in_lobby: 'Вы уже в другом лобби',
+            no_signalr: 'Не удалось загрузить SignalR-клиент. Проверьте подключение к интернету.',
+            network: 'Нет связи с сервером'
+        };
+
+        /* ============================================================
+           Канвас и геометрия виртуального мира
+           ============================================================ */
+        const canvas = $('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        const GROUND_H = 70;
+
+        const playH = () => Math.max(200, canvas.height - GROUND_H);
+        const playerX = () => playH() * 0.164;
+        const playerW = () => playH() * 0.10;
+        const playerH = () => playH() * 0.077;
+        const obsWidth = () => playH() * 0.206;
+        const obsSpacing = () => playH() * 0.52;
+        const leadDistance = () => playH() * 1.2;
+
+        /*
+         * Физика как в оригинальном Flappy Bird.
+         * Оригинал живёт в координатах поля 288x400 (без земли) со значениями
+         * gravity 0.25 px/кадр², jump -4.6 px/кадр, терминальная скорость 10 px/кадр.
+         * Делим их на высоту поля 400 — получаем доли высоты, которые не зависят
+         * от размера окна. Прыжок ровно такой же "мягкий", как в оригинале.
+         */
+        const PHYS = {
+            gravity: 0.25 / 400,
+            jump: -4.6 / 400,
+            maxFall: 10 / 400,
+            rotationUp: -25,
+            rotationDown: 90,
+            rotationLerp: 0.18
+        };
+
+        /*
+         * До первого нажатия птица летит прямо: ни гравитации, ни препятствий.
+         * В сетевом режиме ожидание ограничено, иначе раунд не смог бы
+         * закончиться — он завершается только когда погибли все игроки.
+         */
+        const READY_TIMEOUT_MS = 10000;
+
+        const DIFFICULTIES = {
+            easy: { speed: 0.0034, gap: 0.42 },
+            normal: { speed: 0.0044, gap: 0.34 },
+            hard: { speed: 0.0054, gap: 0.28 }
+        };
+
+        const BIOME_NAMES = [
+            'Пещера', 'Кристаллы', 'Лава', 'Лёд', 'Мшистая', 'Бездна',
+            'Руины', 'Грибы', 'Сталактиты', 'Сумерки'
+        ];
+
+        /* ============================================================
+           Спрайты: маска, контур и коллизионные полигоны
+           ============================================================ */
+
+        /*
+         * Модельки лежат с белым непрозрачным фоном, поэтому силуэт ищется
+         * не по альфа-каналу, а по "непохожести на белый" плюс заливкой от
+         * краёв картинки: внутренние светлые детали модели остаются целыми.
+         */
+        const POLYGON_OPTIONS = {
+            alphaMin: 24,
+            whiteThreshold: 236,
+            maxRows: 96,
+            maxVertices: 40,
+            tolerance: 0.006
+        };
+
+        /*
+         * Ручные полигоны. Ключ — путь к картинке (как в loadImage),
+         * значение — массив точек в долях (0..1) от видимой области модели:
+         * (0,0) — левый верхний угол, (1,1) — правый нижний.
+         * Порядок точек (по/против часовой) не важен, форма может быть невыпуклой:
+         * для столкновений всё равно берётся выпуклая оболочка.
+         * Если запись есть, авто-контур для этого спрайта не строится.
+         */
+        const POLYGON_OVERRIDES = {
+            // 'images/rock0.png': [
+            //     { x: 0.5, y: 0.0 }, { x: 0.95, y: 0.75 }, { x: 0.55, y: 1.0 }, { x: 0.05, y: 0.75 }
+            // ]
+        };
+
+        function loadImage(url, withPolygon = true) {
+            const img = new Image();
+            if (withPolygon) {
+                img.polygonKey = url;
+                // прогреваем контур заранее, чтобы не было рывка в первом кадре
+                img.addEventListener('load', () => spriteOf(img), { once: true });
+            }
+            img.src = url;
+            return img;
+        }
+
+        const backgroundImages = [];
+        for (let i = 0; i < 10; i++) backgroundImages.push(loadImage(`images/bg${i}.jpg`, false));
+
+        const batUpImg = loadImage('images/bat_up.png');
+        const batDownImg = loadImage('images/bat_down.png');
+
+        const topRockImages = [5, 6, 7, 8, 9].map(i => loadImage(`images/rock${i}.png`));
+        const bottomRockImages = [0, 1, 2, 3, 4].map(i => loadImage(`images/rock${i}.png`));
+
+        const spriteMetaCache = new WeakMap();
+
+        function spriteOf(img) {
+            if (!img || !img.polygonKey) return null;
+            const cached = spriteMetaCache.get(img);
+            if (cached !== undefined) return cached;
+            if (!img.complete || img.naturalWidth === 0) return null;
+            let meta = null;
+            try {
+                meta = extractSprite(img);
+            } catch (err) {
+                console.warn('Не удалось построить полигон для', img.polygonKey, err);
+            }
+            spriteMetaCache.set(img, meta);
+            return meta;
+        }
+
+        function extractSprite(img) {
+            const width = img.naturalWidth;
+            const height = img.naturalHeight;
+            if (!width || !height) return null;
+
+            const buffer = document.createElement('canvas');
+            buffer.width = width;
+            buffer.height = height;
+            const bctx = buffer.getContext('2d', { willReadFrequently: true });
+            bctx.drawImage(img, 0, 0);
+
+            const imageData = bctx.getImageData(0, 0, width, height);
+            const data = imageData.data;
+            const total = width * height;
+            const whiteLevel = POLYGON_OPTIONS.whiteThreshold;
+            const alphaMin = POLYGON_OPTIONS.alphaMin;
+
+            const bgLike = new Uint8Array(total);
+            for (let i = 0, p = 0; i < total; i++, p += 4) {
+                const r = data[p];
+                const g = data[p + 1];
+                const b = data[p + 2];
+                bgLike[i] = (data[p + 3] < alphaMin || (r >= whiteLevel && g >= whiteLevel && b >= whiteLevel)) ? 1 : 0;
+            }
+
+            // Заливка от краёв: убирается только тот белый, что связан с границей.
+            const background = new Uint8Array(total);
+            const stack = new Int32Array(total);
+            let sp = 0;
+            const seed = idx => {
+                if (!background[idx] && bgLike[idx]) {
+                    background[idx] = 1;
+                    stack[sp++] = idx;
+                }
+            };
+            for (let x = 0; x < width; x++) {
+                seed(x);
+                seed((height - 1) * width + x);
+            }
+            for (let y = 0; y < height; y++) {
+                seed(y * width);
+                seed(y * width + width - 1);
+            }
+            while (sp > 0) {
+                const idx = stack[--sp];
+                const x = idx % width;
+                const y = (idx - x) / width;
+                if (x > 0) seed(idx - 1);
+                if (x < width - 1) seed(idx + 1);
+                if (y > 0) seed(idx - width);
+                if (y < height - 1) seed(idx + width);
+            }
+
+            let minX = width;
+            let maxX = -1;
+            let minY = height;
+            let maxY = -1;
+            for (let i = 0, p = 3; i < total; i++, p += 4) {
+                if (background[i]) {
+                    data[p] = 0;
+                    continue;
+                }
+                const x = i % width;
+                const y = (i - x) / width;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+            bctx.putImageData(imageData, 0, 0);
+
+            if (maxX < 0) {
+                minX = 0;
+                minY = 0;
+                maxX = width - 1;
+                maxY = height - 1;
+            }
+
+            const spanX = maxX - minX + 1;
+            const spanY = maxY - minY + 1;
+
+            // Держим только видимую область: белые поля не нужны ни при
+            // отрисовке, ни при построении полигона.
+            const cropped = document.createElement('canvas');
+            cropped.width = spanX;
+            cropped.height = spanY;
+            cropped.getContext('2d').drawImage(buffer, minX, minY, spanX, spanY, 0, 0, spanX, spanY);
+            buffer.width = 0;
+            buffer.height = 0;
+
+            // Профиль по строкам: слева и справа находим крайние точки силуэта.
+            const rows = Math.min(POLYGON_OPTIONS.maxRows, spanY);
+            const left = [];
+            const right = [];
+            let lastL = minX;
+            let lastR = maxX;
+            for (let r = 0; r < rows; r++) {
+                const y = minY + Math.round((r * (spanY - 1)) / Math.max(1, rows - 1));
+                let lx = -1;
+                let rx = -1;
+                for (let x = minX; x <= maxX; x++) {
+                    if (!background[y * width + x]) {
+                        if (lx < 0) lx = x;
+                        rx = x;
+                    }
+                }
+                if (lx < 0) {
+                    lx = lastL;
+                    rx = lastR;
+                }
+                lastL = lx;
+                lastR = rx;
+                const ny = (y - minY) / spanY;
+                left.push({ x: (lx - minX) / spanX, y: ny });
+                right.push({ x: (rx - minX) / spanX, y: ny });
+            }
+
+            let polygon = buildOutline(left, right, POLYGON_OPTIONS.tolerance);
+            let tolerance = POLYGON_OPTIONS.tolerance;
+            let guard = 0;
+            while (polygon.length > POLYGON_OPTIONS.maxVertices && guard++ < 12) {
+                tolerance *= 1.7;
+                polygon = buildOutline(left, right, tolerance);
+            }
+            if (polygon.length > POLYGON_OPTIONS.maxVertices) {
+                const step = polygon.length / POLYGON_OPTIONS.maxVertices;
+                const reduced = [];
+                for (let i = 0; i < POLYGON_OPTIONS.maxVertices; i++) reduced.push(polygon[Math.floor(i * step)]);
+                polygon = reduced;
+            }
+
+            const override = POLYGON_OVERRIDES[img.polygonKey];
+            if (Array.isArray(override) && override.length >= 3) {
+                polygon = override.map(p => ({ x: p.x, y: p.y }));
+            }
+
+            return {
+                canvas: cropped,
+                width: spanX,
+                height: spanY,
+                bbox: { x: 0, y: 0, w: 1, h: 1 },
+                polygon,
+                hull: convexHull(polygon)
+            };
+        }
+
+        function buildOutline(left, right, tolerance) {
+            const a = simplifyPath(left, tolerance);
+            const b = simplifyPath(right, tolerance);
+            return a.concat(b.reverse());
+        }
+
+        function simplifyPath(points, tolerance) {
+            if (points.length < 3) return points.slice();
+            const keep = new Uint8Array(points.length);
+            keep[0] = 1;
+            keep[points.length - 1] = 1;
+            const tolerance2 = tolerance * tolerance;
+            const stack = [[0, points.length - 1]];
+
+            while (stack.length) {
+                const pair = stack.pop();
+                const first = pair[0];
+                const last = pair[1];
+                const a = points[first];
+                const b = points[last];
+                const dx = b.x - a.x;
+                const dy = b.y - a.y;
+                const len2 = dx * dx + dy * dy;
+                let index = -1;
+                let maxDist = 0;
+
+                for (let i = first + 1; i < last; i++) {
+                    const p = points[i];
+                    let dist2;
+                    if (len2 === 0) {
+                        const ex = p.x - a.x;
+                        const ey = p.y - a.y;
+                        dist2 = ex * ex + ey * ey;
+                    } else {
+                        let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2;
+                        if (t < 0) t = 0;
+                        else if (t > 1) t = 1;
+                        const ex = a.x + t * dx - p.x;
+                        const ey = a.y + t * dy - p.y;
+                        dist2 = ex * ex + ey * ey;
+                    }
+                    if (dist2 > maxDist) {
+                        maxDist = dist2;
+                        index = i;
+                    }
+                }
+
+                if (index > 0 && maxDist > tolerance2) {
+                    keep[index] = 1;
+                    stack.push([first, index], [index, last]);
+                }
+            }
+
+            return points.filter((_, i) => keep[i]);
+        }
+
+        function convexHull(points) {
+            if (points.length < 3) return points.slice();
+            const sorted = points.slice().sort((a, b) => (a.x - b.x) || (a.y - b.y));
+            const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+
+            const lower = [];
+            for (const p of sorted) {
+                while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+                lower.push(p);
+            }
+            const upper = [];
+            for (let i = sorted.length - 1; i >= 0; i--) {
+                const p = sorted[i];
+                while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+                upper.push(p);
+            }
+            lower.pop();
+            upper.pop();
+            return lower.concat(upper);
+        }
+
+        /* ============================================================
+           Размещение спрайта: белые поля обрезаются по bbox
+           ============================================================ */
+
+        function spritePlacement(meta, box, fit) {
+            let w = box.w;
+            let h = box.h;
+            if (meta && fit === 'contain') {
+                const aspect = (meta.bbox.w * meta.width) / (meta.bbox.h * meta.height);
+                if (isFinite(aspect) && aspect > 0) {
+                    if (w / h > aspect) w = h * aspect;
+                    else h = w / aspect;
+                }
+            }
+            const x = box.x + (box.w - w) / 2;
+            const y = box.y + (box.h - h) / 2;
+            return { x, y, w, h, cx: x + w / 2, cy: y + h / 2 };
+        }
+
+        function drawSpriteIn(meta, place) {
+            ctx.drawImage(meta.canvas, 0, 0, meta.width, meta.height, place.x, place.y, place.w, place.h);
+        }
+
+        function strokePolygon(points, color, width) {
+            if (!points || points.length < 3) return;
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(points[0].x, points[0].y);
+            for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+            ctx.closePath();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width || 2;
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        /* Готовый коллизионный полигон спрайта, вписанного в прямоугольник. */
+        function spritePolygon(img, x, y, w, h, rotationDeg) {
+            const meta = spriteOf(img);
+            if (!meta) return null;
+            return placementPolygon(meta, spritePlacement(meta, { x, y, w, h }, 'fill'), rotationDeg);
+        }
+
+        /* Полигон, по которому рисуется спрайт (нужен и для отрисовки, и для коллизии). */
+        function spriteBox(img, x, y, w, h) {
+            const meta = spriteOf(img);
+            if (!meta) return null;
+            return spritePlacement(meta, { x, y, w, h }, 'fill');
+        }
+
+        function placementPolygon(meta, place, rotationDeg) {
+            if (!meta || !meta.hull || meta.hull.length < 3) return null;
+            const rad = (rotationDeg || 0) * Math.PI / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            const halfW = place.w / 2;
+            const halfH = place.h / 2;
+            const points = [];
+            for (const pt of meta.hull) {
+                const lx = -halfW + pt.x * place.w;
+                const ly = -halfH + pt.y * place.h;
+                points.push({
+                    x: place.cx + lx * cos - ly * sin,
+                    y: place.cy + lx * sin + ly * cos
+                });
+            }
+            return points;
+        }
+
+        function polygonsOverlap(a, b) {
+            if (!a || !b || a.length < 3 || b.length < 3) return false;
+            return satOverlap(a, b) && satOverlap(b, a);
+        }
+
+        function satOverlap(a, b) {
+            for (let i = 0; i < a.length; i++) {
+                const p1 = a[i];
+                const p2 = a[(i + 1) % a.length];
+                const nx = p2.y - p1.y;
+                const ny = p1.x - p2.x;
+                let minA = Infinity;
+                let maxA = -Infinity;
+                for (const p of a) {
+                    const d = p.x * nx + p.y * ny;
+                    if (d < minA) minA = d;
+                    if (d > maxA) maxA = d;
+                }
+                let minB = Infinity;
+                let maxB = -Infinity;
+                for (const p of b) {
+                    const d = p.x * nx + p.y * ny;
+                    if (d < minB) minB = d;
+                    if (d > maxB) maxB = d;
+                }
+                if (maxA < minB || maxB < minA) return false;
+            }
+            return true;
+        }
+
+        /* ============================================================
+           Состояние
+           ============================================================ */
+        const state = {
+            mode: 'solo',          // 'solo' | 'net'
+            screen: 'menuScreen',
+            nickname: localStorage.getItem('fluppyNickname') || '',
+            lobby: null,
+            connection: null,
+            remotes: new Map(),
+            debugPolygons: false
+        };
+
+        const game = {
+            running: false,
+            animId: null,
+            score: 0,
+            travelled: 0,
+            nextIndex: 0,
+            obstacles: [],
+            bgScroll: 0,
+            lastTs: 0,
+            lastSync: 0,
+            seed: 1,
+            difficulty: 'normal',
+            biomeMode: 'auto',
+            biomeIndex: 0,
+            localAlive: true,
+            started: false,     // нажал ли игрок в первый раз
+            readyStart: 0,      // когда начался прямой полёт
+            readyTimer: 0       // страховочный таймер автостарта в сети
+        };
+
+        const player = { y: 0, velocity: 0, rotation: 0 };
+
+        /* ============================================================
+           Экраны
+           ============================================================ */
+        const SCREENS = ['menuScreen', 'onlineScreen', 'lobbyScreen', 'resultsScreen', 'soloGameOverScreen'];
+
+        function showScreen(id) {
+            SCREENS.forEach(name => {
+                const el = $(name);
+                if (!el) return;
+                el.classList.toggle('hidden', name !== id);
+                el.classList.toggle('flex', name === id);
+            });
+
+            $('uiOverlay').classList.toggle('hidden', id === null);
+            state.screen = id;
+        }
+
+        function setError(message) {
+            const box = $('onlineError');
+            if (!message) {
+                box.classList.add('hidden');
+                box.textContent = '';
+                return;
+            }
+            box.textContent = message;
+            box.classList.remove('hidden');
+        }
+
+        /* ============================================================
+           Игровой цикл
+           ============================================================ */
+        function jump() {
+            if (!game.running || !game.localAlive) return;
+            // Первое нажатие и завершает прямой полёт, и даёт первый импульс.
+            if (!game.started) {
+                startFlight();
+                return;
+            }
+            player.velocity = playH() * PHYS.jump;
+        }
+
+        /* Конец прямого полёта: включаются гравитация и препятствия. */
+        function startFlight() {
+            if (game.started) return;
+            game.started = true;
+            game.readyStart = 0;
+            if (game.readyTimer) {
+                clearTimeout(game.readyTimer);
+                game.readyTimer = 0;
+            }
+            // Первый взмах — и при нажатии, и при автостарте по таймауту,
+            // иначе птица просто падала бы вниз.
+            player.velocity = playH() * PHYS.jump;
+            $('readyHint').classList.add('hidden');
+        }
+
+        /*
+         * Прямой полёт: птица держится на одной высоте, камера едет вперёд,
+         * препятствий нет. В сетевом режиме ждём ограниченное время, иначе
+         * раунд (он кончается, когда погибли все) мог бы зависнуть навсегда.
+         */
+        function readyHintText(waited) {
+            if (state.mode !== 'net') return 'Пробел или клик — начать полёт';
+            const left = Math.max(0, Math.ceil((READY_TIMEOUT_MS - waited) / 1000));
+            return `Пробел или клик — начать полёт · авто через ${left} с`;
+        }
+
+        /*
+         * Подсказка видна сразу после старта раунда, не дожидаясь первого кадра.
+         * В сети страхуемся таймером: в свёрнутой вкладке requestAnimationFrame
+         * не тикает, и раунд завис бы.
+         */
+        function showReadyHint() {
+            const hint = $('readyHint');
+            hint.textContent = readyHintText(0);
+            hint.classList.remove('hidden');
+
+            if (game.readyTimer) clearTimeout(game.readyTimer);
+            game.readyTimer = state.mode === 'net'
+                ? setTimeout(() => { if (game.running) startFlight(); }, READY_TIMEOUT_MS)
+                : 0;
+        }
+
+        function updateReadyPhase() {
+            if (!game.readyStart) game.readyStart = performance.now();
+            const waited = performance.now() - game.readyStart;
+            const hint = $('readyHint');
+
+            if (state.mode === 'net' && waited >= READY_TIMEOUT_MS) {
+                startFlight();
+                return;
+            }
+
+            hint.classList.remove('hidden');
+            const text = readyHintText(waited);
+            if (hint.textContent !== text) hint.textContent = text;
+        }
+
+        function makeObstacle(index, x) {
+            const rng = mulberry32((game.seed ^ Math.imul(index + 1, 2654435761)) >>> 0);
+            const H = playH();
+            const cfg = DIFFICULTIES[game.difficulty] || DIFFICULTIES.normal;
+            const gap = H * cfg.gap;
+            const delta = (rng() * 2 - 1) * H * 0.14;
+
+            let topH = H / 2 - gap / 2 + delta;
+            const minH = H * 0.07;
+            const maxH = H - gap - minH;
+            topH = Math.max(minH, Math.min(maxH, topH));
+
+            return {
+                index,
+                x,
+                topH,
+                bottomY: topH + gap,
+                passed: false,
+                topRock: topRockImages[Math.floor(rng() * topRockImages.length)],
+                bottomRock: bottomRockImages[Math.floor(rng() * bottomRockImages.length)]
+            };
+        }
+
+        function ensureObstacles() {
+            const spacing = obsSpacing();
+            const base = playerX() + leadDistance();
+            const limit = canvas.width + obsWidth();
+
+            for (let guard = 0; guard < 64; guard++) {
+                const x = base + game.nextIndex * spacing - game.travelled;
+                if (x > limit) return;
+                game.obstacles.push(makeObstacle(game.nextIndex, x));
+                game.nextIndex++;
+            }
+        }
+
+        function currentBiome() {
+            if (game.biomeMode === 'fixed') return Math.abs(game.biomeIndex) % backgroundImages.length;
+            return Math.floor(game.score / 20) % backgroundImages.length;
+        }
+
+        function updateScoreHud() {
+            $('scoreDisplay').innerText = game.score;
+            $('biomeDisplay').innerText = `${BIOME_NAMES[currentBiome()] || 'Пещера'} ${currentBiome() + 1}`;
+        }
+
+        function resetWorld() {
+            game.score = 0;
+            game.travelled = 0;
+            game.nextIndex = 0;
+            game.obstacles = [];
+            game.bgScroll = 0;
+            game.lastTs = 0;
+            game.lastSync = 0;
+            game.localAlive = true;
+            game.started = false;
+            game.readyStart = 0;
+            if (game.readyTimer) {
+                clearTimeout(game.readyTimer);
+                game.readyTimer = 0;
+            }
+            player.y = playH() / 2;
+            player.velocity = 0;
+            player.rotation = 0;
+            state.remotes.clear();
+            $('readyHint').classList.add('hidden');
+            updateScoreHud();
+        }
+
+        function loop(ts) {
+            if (!game.running) return;
+
+            if (!game.lastTs) game.lastTs = ts;
+            let dt = (ts - game.lastTs) / (1000 / 60);
+            game.lastTs = ts;
+            if (!isFinite(dt) || dt < 0) dt = 1;
+            dt = Math.min(dt, 4);
+
+            update(dt);
+            render();
+
+            if (ts - game.lastSync > 100) {
+                game.lastSync = ts;
+                sendPlayerState();
+            }
+
+            if (game.running) game.animId = requestAnimationFrame(loop);
+        }
+
+        function birdBox() {
+            return { x: playerX(), y: player.y, w: playerW(), h: playerH() };
+        }
+
+        /*
+         * Кадр птицы. В фазе прямого полёта он всегда один и тот же:
+         * bat_up и bat_down имеют разные пропорции, поэтому их переключение
+         * визуально «дёргало» птицу, хотя она стояла на месте.
+         */
+        function flappingUp() {
+            return !game.started || player.velocity < 0;
+        }
+
+        function birdImage() {
+            return flappingUp() ? batUpImg : batDownImg;
+        }
+
+        /*
+         * Птица вписывается в свой прямоугольник растяжением ('fill'):
+         * у bat_up и bat_down разные пропорции, а хитбокс должен быть
+         * одинаковым — иначе смена модельки меняет сложность.
+         */
+        function birdPlacement() {
+            const box = birdBox();
+            return spriteBox(birdImage(), box.x, box.y, box.w, box.h);
+        }
+
+        function obstaclePolygons(o, w) {
+            const H = playH();
+            const bottomHeight = H - o.bottomY;
+            return {
+                top: spritePolygon(o.topRock, o.x, 0, w, o.topH, 0),
+                bottom: bottomHeight > 0
+                    ? spritePolygon(o.bottomRock, o.x, o.bottomY, w, bottomHeight, 0)
+                    : null
+            };
+        }
+
+        function update(dt) {
+            const H = playH();
+            const cfg = DIFFICULTIES[game.difficulty] || DIFFICULTIES.normal;
+
+            game.bgScroll += 1.2 * dt;
+
+            // Прямой полёт до первого нажатия: птица держит высоту,
+            // препятствия стоят на месте (движется только фон).
+            if (!game.started && game.localAlive) {
+                updateReadyPhase();
+                return;
+            }
+
+            game.travelled += H * cfg.speed * dt;
+            ensureObstacles();
+
+            const spacing = obsSpacing();
+            const base = playerX() + leadDistance();
+            const w = obsWidth();
+
+            for (let i = game.obstacles.length - 1; i >= 0; i--) {
+                const o = game.obstacles[i];
+                o.x = base + o.index * spacing - game.travelled;
+                if (o.x + w < -w) game.obstacles.splice(i, 1);
+            }
+
+            if (!game.localAlive) return;
+
+            // Физика оригинала: постоянное ускорение и терминальная скорость.
+            player.velocity += H * PHYS.gravity * dt;
+            const maxFall = H * PHYS.maxFall;
+            if (player.velocity > maxFall) player.velocity = maxFall;
+            player.y += player.velocity * dt;
+
+            // Наклон: вверх — задираем нос, падение — пикируем вниз.
+            const target = player.velocity < 0 ? PHYS.rotationUp : PHYS.rotationDown;
+            const k = 1 - Math.pow(1 - PHYS.rotationLerp, dt);
+            player.rotation += (target - player.rotation) * k;
+            if (player.rotation < PHYS.rotationUp) player.rotation = PHYS.rotationUp;
+            if (player.rotation > PHYS.rotationDown) player.rotation = PHYS.rotationDown;
+
+            // Как в оригинале: потолок не убивает — птица упирается в него,
+            // а гибель наступает только от скал и земли.
+            if (player.y < 0) {
+                player.y = 0;
+                if (player.velocity < 0) player.velocity = 0;
+                player.rotation = PHYS.rotationUp;
+            }
+
+            const ph = playerH();
+            if (player.y + ph >= H) {
+                localDeath();
+                return;
+            }
+
+            const box = birdBox();
+            const place = birdPlacement();
+            const birdPoly = place
+                ? placementPolygon(spriteOf(birdImage()), place, player.rotation)
+                : null;
+
+            for (const o of game.obstacles) {
+                if (!o.passed && o.x + w < (place ? place.x : box.x)) {
+                    o.passed = true;
+                    game.score++;
+                    updateScoreHud();
+                }
+
+                if (box.x + box.w < o.x || box.x > o.x + w) continue;
+
+                const polys = obstaclePolygons(o, w);
+                let hit;
+                if (birdPoly && (polys.top || polys.bottom)) {
+                    hit = (polys.top && polygonsOverlap(birdPoly, polys.top))
+                        || (polys.bottom && polygonsOverlap(birdPoly, polys.bottom));
+                }
+                if (typeof hit !== 'boolean') {
+                    hit = box.y < o.topH || box.y + box.h > o.bottomY;
+                }
+
+                if (hit) {
+                    localDeath();
+                    return;
+                }
+            }
+        }
+
+        function render() {
+            const H = playH();
+            const w = obsWidth();
+            const biomeIndex = currentBiome();
+            const bg = backgroundImages[biomeIndex];
+
+            if (bg && bg.complete && bg.naturalWidth !== 0) {
+                const tileW = Math.max(canvas.width, 1);
+                const xPos = -(game.bgScroll % tileW);
+                ctx.drawImage(bg, xPos, 0, tileW, canvas.height);
+                ctx.drawImage(bg, xPos + tileW, 0, tileW, canvas.height);
+            } else {
+                const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                grad.addColorStop(0, '#090d16');
+                grad.addColorStop(0.5, '#1e1b4b');
+                grad.addColorStop(1, '#31103f');
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            for (const o of game.obstacles) {
+                const topPlace = spriteBox(o.topRock, o.x, 0, w, o.topH);
+                if (topPlace) {
+                    drawSpriteIn(spriteOf(o.topRock), topPlace);
+                } else {
+                    ctx.fillStyle = '#1f2937';
+                    ctx.fillRect(o.x, 0, w, o.topH);
+                }
+
+                const bottomHeight = H - o.bottomY;
+                if (bottomHeight > 0) {
+                    const bottomPlace = spriteBox(o.bottomRock, o.x, o.bottomY, w, bottomHeight);
+                    if (bottomPlace) {
+                        drawSpriteIn(spriteOf(o.bottomRock), bottomPlace);
+                    } else {
+                        ctx.fillStyle = '#1f2937';
+                        ctx.fillRect(o.x, o.bottomY, w, bottomHeight);
+                    }
+                }
+            }
+
+            ctx.fillStyle = '#030712';
+            ctx.fillRect(0, H, canvas.width, GROUND_H);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillRect(0, H, canvas.width, 8);
+
+            if (state.mode === 'net') drawRemotes();
+
+            if (game.localAlive) {
+                // В фазе прямого полёта птица статична: один кадр, без наклона.
+                drawBat(playerX(), player.y, 1, null, player.rotation, flappingUp());
+            }
+
+            if (state.debugPolygons) drawDebugPolygons();
+        }
+
+        function drawDebugPolygons() {
+            const H = playH();
+            const w = obsWidth();
+
+            for (const o of game.obstacles) {
+                const polys = obstaclePolygons(o, w);
+                strokePolygon(polys.top, '#f472b6', 2);
+                strokePolygon(polys.bottom, '#f472b6', 2);
+            }
+
+            if (game.localAlive) {
+                const img = birdImage();
+                const place = birdPlacement();
+                const meta = spriteOf(img);
+                if (place && meta) {
+                    ctx.save();
+                    ctx.translate(place.cx, place.cy);
+                    ctx.rotate((player.rotation * Math.PI) / 180);
+                    ctx.strokeStyle = '#22d3ee';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    meta.polygon.forEach((p, i) => {
+                        const x = -place.w / 2 + p.x * place.w;
+                        const y = -place.h / 2 + p.y * place.h;
+                        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+                    });
+                    ctx.closePath();
+                    ctx.stroke();
+                    ctx.restore();
+
+                    strokePolygon(
+                        placementPolygon(meta, place, player.rotation),
+                        '#facc15',
+                        2
+                    );
+                }
+            }
+
+            ctx.save();
+            ctx.font = 'bold 12px Nunito, sans-serif';
+            ctx.fillStyle = '#facc15';
+            ctx.textAlign = 'left';
+            ctx.fillText(`полигоны: вкл (H) · птица ${Math.round(player.rotation)}°`, 12, H - 12);
+            ctx.restore();
+        }
+
+        function drawBat(x, y, scale, nickname, rotationDeg, movingUp) {
+            const w = playerW() * scale;
+            const h = playerH() * scale;
+            const img = movingUp ? batUpImg : batDownImg;
+            const meta = spriteOf(img);
+            const rotate = rotationDeg || 0;
+
+            ctx.save();
+            ctx.translate(x + w / 2, y + h / 2);
+            if (rotate) ctx.rotate((rotate * Math.PI) / 180);
+
+            if (meta) {
+                drawSpriteIn(meta, spritePlacement(meta, { x: -w / 2, y: -h / 2, w, h }, 'fill'));
+            } else {
+                ctx.fillStyle = '#f59e0b';
+                ctx.fillRect(-w / 2, -h / 2, w, h);
+            }
+            ctx.restore();
+
+            if (nickname) {
+                ctx.save();
+                ctx.font = `bold ${Math.max(10, playerH() * 0.28)}px Nunito, sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.fillStyle = 'rgba(0,0,0,0.55)';
+                const tw = ctx.measureText(nickname).width;
+                ctx.fillRect(x + w / 2 - tw / 2 - 5, y - playerH() * 0.42 - 4, tw + 10, playerH() * 0.32 + 2);
+                ctx.fillStyle = '#e2e8f0';
+                ctx.fillText(nickname, x + w / 2, y - playerH() * 0.42);
+                ctx.restore();
+            }
+        }
+
+        function remoteOffset(nickname) {
+            return (hashInt(nickname) % 61) - 30;
+        }
+
+        function drawRemotes() {
+            const H = playH();
+            for (const [nickname, remote] of state.remotes) {
+                if (!remote.isAlive) continue;
+                const x = playerX() + remoteOffset(nickname);
+                const y = Math.max(0, Math.min(H - playerH(), remote.y * H));
+                drawBat(x, y, 0.85, nickname, remote.rotation || 0, (remote.rotation || 0) < 20);
+            }
+        }
+
+        /* ============================================================
+           Смерть и завершение раунда
+           ============================================================ */
+        function updateAliveHud() {
+            let alive = game.localAlive ? 1 : 0;
+            for (const remote of state.remotes.values()) {
+                if (remote.isAlive) alive++;
+            }
+            $('hudAlive').textContent = alive;
+        }
+
+        function localDeath() {
+            game.localAlive = false;
+            $('readyHint').classList.add('hidden');
+            updateAliveHud();
+
+            if (state.mode === 'solo') {
+                game.running = false;
+                if (game.animId) cancelAnimationFrame(game.animId);
+                $('finalScore').innerText = game.score;
+                $('hud').classList.add('hidden');
+                showScreen('soloGameOverScreen');
+                return;
+            }
+
+            $('spectatorBanner').classList.remove('hidden');
+            if (state.connection) {
+                state.connection.invoke('PlayerDied', game.score).catch(() => { });
+            }
+        }
+
+        function stopRound() {
+            game.running = false;
+            if (game.animId) cancelAnimationFrame(game.animId);
+            game.animId = null;
+            if (game.readyTimer) {
+                clearTimeout(game.readyTimer);
+                game.readyTimer = 0;
+            }
+            $('hud').classList.add('hidden');
+            $('spectatorBanner').classList.add('hidden');
+            $('readyHint').classList.add('hidden');
+            resetDebugPolygons();
+        }
+
+        /* ============================================================
+           Одиночная игра
+           ============================================================ */
+        function startSoloGame() {
+            state.mode = 'solo';
+            game.seed = (Date.now() & 0x7fffffff) || 1;
+            game.difficulty = 'normal';
+            game.biomeMode = 'auto';
+            game.biomeIndex = 0;
+
+            resetWorld();
+            game.readyStart = performance.now();
+
+            $('netHud').classList.add('hidden');
+            $('spectatorBanner').classList.add('hidden');
+            $('hud').classList.remove('hidden');
+            showReadyHint();
+            showScreen(null);
+
+            game.running = true;
+            if (game.animId) cancelAnimationFrame(game.animId);
+            game.animId = requestAnimationFrame(loop);
+        }
+
+        /* ============================================================
+           Подключение SignalR
+           ============================================================ */
+        async function getConnection() {
+            if (state.connection) return state.connection;
+            if (typeof signalR === 'undefined') throw new Error('no_signalr');
+
+            const connection = new signalR.HubConnectionBuilder()
+                .withUrl('/gameHub')
+                .withAutomaticReconnect([0, 1000, 2000, 5000, 10000])
+                .build();
+
+            connection.on('LobbyUpdated', snapshot => applyLobby(snapshot));
+            connection.on('GameStarted', snapshot => startNetworkRound(snapshot));
+            connection.on('RoundEnded', results => showRoundResults(results));
+            connection.on('PlayerMoved', (nickname, x, y, score) => updateRemote(nickname, x, y, score));
+            connection.on('PlayerDied', (nickname, score) => markRemoteDead(nickname, score));
+
+            connection.onreconnecting(() => setError('Переподключение…'));
+            connection.onreconnected(() => { setError(''); rejoinAfterReconnect(); });
+            connection.onclose(() => {
+                state.connection = null;
+                setError(SERVER_ERRORS.network);
+            });
+
+            await connection.start();
+            state.connection = connection;
+            return connection;
+        }
+
+        function saveSession(code, nickname, password) {
+            sessionStorage.setItem('fluppySession', JSON.stringify({ code, nickname, password: password || '' }));
+        }
+
+        function loadSession() {
+            try {
+                return JSON.parse(sessionStorage.getItem('fluppySession') || 'null');
+            } catch {
+                return null;
+            }
+        }
+
+        async function rejoinAfterReconnect() {
+            const saved = loadSession();
+            if (!saved || !saved.code || !state.connection) return;
+
+            try {
+                const ack = await state.connection.invoke('JoinLobby', saved.code, saved.nickname, saved.password || '');
+                if (ack && ack.ok) {
+                    state.nickname = saved.nickname;
+                    applyLobby(ack.lobby);
+                }
+            } catch { /* игнорируем — пользователь вернётся вручную */ }
+        }
+
+        async function invoke(hubMethod, ...args) {
+            const connection = await getConnection();
+            return connection.invoke(hubMethod, ...args);
+        }
+
+        function requireNickname() {
+            const nickname = ($('nickname').value || '').trim();
+            if (nickname.length === 0 || nickname.length > 16) {
+                setError(SERVER_ERRORS.invalid_nickname);
+                return null;
+            }
+
+            state.nickname = nickname;
+            localStorage.setItem('fluppyNickname', nickname);
+            return nickname;
+        }
+
+        async function handleAck(ack, password) {
+            if (!ack || !ack.ok) {
+                setError(SERVER_ERRORS[ack && ack.error] || 'Ошибка операции');
+                return false;
+            }
+
+            setError('');
+            saveSession(ack.lobby.code, state.nickname, password);
+            showScreen('lobbyScreen');
+            applyLobby(ack.lobby);
+            return true;
+        }
+
+        /* ============================================================
+           Действия лобби
+           ============================================================ */
+        function openOnlineMenu() {
+            state.mode = 'net';
+            setError('');
+            if (state.nickname) $('nickname').value = state.nickname;
+            showScreen('onlineScreen');
+        }
+
+        async function createLobby() {
+            const nickname = requireNickname();
+            if (!nickname) return;
+
+            const name = ($('createName').value || '').trim();
+            const password = $('createPassword').value || '';
+
+            try {
+                const ack = await invoke('CreateLobby', name, password, nickname);
+                await handleAck(ack, password);
+            } catch {
+                setError(SERVER_ERRORS.network);
+            }
+        }
+
+        async function joinLobbyByName() {
+            const nickname = requireNickname();
+            if (!nickname) return;
+
+            const name = ($('joinName').value || '').trim();
+            const password = $('joinPassword').value || '';
+
+            try {
+                const ack = await invoke('JoinLobbyByName', name, nickname, password);
+                await handleAck(ack, password);
+            } catch {
+                setError(SERVER_ERRORS.network);
+            }
+        }
+
+        async function joinLobbyByCode() {
+            const nickname = requireNickname();
+            if (!nickname) return;
+
+            const code = ($('joinCode').value || '').trim().toUpperCase();
+            if (!code) {
+                setError(SERVER_ERRORS.lobby_not_found);
+                return;
+            }
+
+            try {
+                const ack = await invoke('JoinLobby', code, nickname, '');
+                if (await handleAck(ack, '')) return;
+
+                if (ack && ack.error === 'wrong_password') {
+                    const password = prompt('Лобби защищено паролем. Введите пароль:');
+                    if (password) {
+                        const retry = await invoke('JoinLobby', code, nickname, password);
+                        await handleAck(retry, password);
+                    }
+                }
+            } catch {
+                setError(SERVER_ERRORS.network);
+            }
+        }
+
+        async function leaveLobby() {
+            stopRound();
+            sessionStorage.removeItem('fluppySession');
+
+            try {
+                if (state.connection) await state.connection.invoke('LeaveLobby');
+            } catch { /* не критично */ }
+
+            state.lobby = null;
+            state.mode = 'solo';
+            showScreen('menuScreen');
+        }
+
+        async function startNetworkGame() {
+            try {
+                const ack = await invoke('StartGame');
+                if (!ack || !ack.ok) setError(SERVER_ERRORS[ack && ack.error] || 'Ошибка операции');
+            } catch {
+                setError(SERVER_ERRORS.network);
+            }
+        }
+
+        async function applySettings() {
+            if (!state.connection) return;
+
+            const difficulty = $('difficultySelect').value;
+            const biomeMode = $('biomeModeSelect').value;
+            const biomeIndex = parseInt($('biomeIndexSelect').value || '0', 10);
+
+            try {
+                await state.connection.invoke('UpdateSettings', difficulty, biomeMode, biomeIndex);
+            } catch { /* не критично */ }
+        }
+
+        async function transferHost() {
+            const target = $('transferSelect').value;
+            if (!target || !state.connection) return;
+
+            try {
+                await state.connection.invoke('TransferHost', target);
+            } catch { /* не критично */ }
+        }
+
+        async function copyInviteLink() {
+            const link = $('lobbyLink').dataset.link || '';
+            try {
+                await navigator.clipboard.writeText(link);
+                $('lobbyStatus').textContent = 'Ссылка скопирована в буфер обмена';
+            } catch {
+                $('lobbyStatus').textContent = link;
+            }
+        }
+
+        /* ============================================================
+           События сервера
+           ============================================================ */
+        function applyLobby(snapshot) {
+            if (!snapshot) return;
+            state.lobby = snapshot;
+            if (state.mode === 'net' && snapshot.phase === 'Playing') syncRemotes(snapshot);
+            if (state.screen === 'lobbyScreen') renderLobby();
+        }
+
+        /// <summary>Синхронизирует список соперников с состоянием лобби на сервере.</summary>
+        function syncRemotes(snapshot) {
+            const mine = state.nickname.toLowerCase();
+            const seen = new Set();
+
+            for (const p of snapshot.players) {
+                if (p.nickname.toLowerCase() === mine) {
+                    game.localAlive = p.isAlive;
+                    continue;
+                }
+                if (!p.isConnected) continue;
+
+                seen.add(p.nickname);
+                const existing = state.remotes.get(p.nickname) || { x: 0, y: 0 };
+                state.remotes.set(p.nickname, { ...existing, score: p.score, isAlive: p.isAlive });
+            }
+
+            for (const nickname of [...state.remotes.keys()]) {
+                if (!seen.has(nickname)) state.remotes.delete(nickname);
+            }
+
+            updateAliveHud();
+        }
+
+        function startNetworkRound(snapshot) {
+            state.lobby = snapshot;
+            state.mode = 'net';
+
+            game.seed = snapshot.seed || 1;
+            game.difficulty = snapshot.settings.difficulty;
+            game.biomeMode = snapshot.settings.biomeMode;
+            game.biomeIndex = snapshot.settings.biomeIndex;
+
+            const me = snapshot.players.find(p => p.nickname.toLowerCase() === state.nickname.toLowerCase());
+            resetWorld();
+            game.localAlive = !!(me && me.isAlive);
+            // Зритель не летит сам, но должен видеть, как идёт раунд.
+            if (!game.localAlive) game.started = true;
+            else game.readyStart = performance.now();
+
+            $('netHud').classList.remove('hidden');
+            $('hudCode').textContent = snapshot.code;
+            syncRemotes(snapshot);
+            $('hud').classList.remove('hidden');
+            $('spectatorBanner').classList.toggle('hidden', game.localAlive);
+            if (game.localAlive) showReadyHint();
+            showScreen(null);
+
+            if (game.animId) cancelAnimationFrame(game.animId);
+            game.running = true;
+            game.animId = requestAnimationFrame(loop);
+        }
+
+        function showRoundResults(results) {
+            stopRound();
+            state.mode = 'net';
+
+            const rows = (results || []).map((r, i) => `
+                <div class="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2">
+                    <div class="flex items-center gap-2 text-left">
+                        <span class="text-xs font-game text-slate-500 w-5">${i + 1}</span>
+                        <span class="text-sm font-bold ${r.isHost ? 'text-amber-400' : 'text-slate-200'}">${escapeHtml(r.nickname)}</span>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-sm font-game text-emerald-400">${r.score}</div>
+                        <div class="text-[10px] text-slate-500">всего ${r.totalScore}</div>
+                    </div>
+                </div>`).join('');
+
+            $('resultsList').innerHTML = rows || '<div class="text-xs text-slate-500">Результатов нет</div>';
+            showScreen('resultsScreen');
+        }
+
+        function backToLobby() {
+            resetDebugPolygons();
+            if (!state.lobby) {
+                showScreen('menuScreen');
+                return;
+            }
+            renderLobby();
+            showScreen('lobbyScreen');
+        }
+
+        function updateRemote(nickname, x, y, score) {
+            if (!nickname) return;
+            if (nickname.toLowerCase() === state.nickname.toLowerCase()) return;
+
+            const existing = state.remotes.get(nickname) || { isAlive: true, y };
+            const prevY = typeof existing.y === 'number' ? existing.y : y;
+            const dy = y - prevY;
+            let rotation = existing.rotation || 0;
+            if (Math.abs(dy) > 0.0005) {
+                const target = dy < 0 ? PHYS.rotationUp : PHYS.rotationDown;
+                rotation += (target - rotation) * 0.5;
+            } else {
+                rotation *= 0.85;
+            }
+            state.remotes.set(nickname, { x, y, score, isAlive: existing.isAlive, rotation });
+        }
+
+        function markRemoteDead(nickname, score) {
+            if (!nickname) return;
+            if (nickname.toLowerCase() === state.nickname.toLowerCase()) {
+                game.localAlive = false;
+                updateAliveHud();
+                $('spectatorBanner').classList.remove('hidden');
+                return;
+            }
+
+            const existing = state.remotes.get(nickname) || { x: 0, y: 0, rotation: 0 };
+            state.remotes.set(nickname, { ...existing, score, isAlive: false });
+            updateAliveHud();
+        }
+
+        /* ============================================================
+           Отладка полигонов
+           ============================================================ */
+        function setDebugPolygons(enabled) {
+            state.debugPolygons = !!enabled;
+            const badge = $('debugBadge');
+            if (badge) badge.classList.toggle('hidden', !state.debugPolygons);
+        }
+
+        function resetDebugPolygons() {
+            setDebugPolygons(false);
+        }
+
+        /* ============================================================
+           Отрисовка лобби
+           ============================================================ */
+        function renderLobby() {
+            const lobby = state.lobby;
+            if (!lobby) return;
+
+            const me = state.nickname.toLowerCase();
+            const isHost = lobby.hostNickname.toLowerCase() === me;
+            const connected = lobby.players.filter(p => p.isConnected);
+
+            $('lobbyName').textContent = lobby.name;
+            $('lobbyCode').textContent = lobby.code;
+
+            const link = `${location.origin}/?lobby=${lobby.code}`;
+            $('lobbyLink').textContent = link;
+            $('lobbyLink').dataset.link = link;
+
+            $('lobbyCount').textContent = `${connected.length} / ${lobby.maxPlayers}`;
+
+            $('playersList').innerHTML = lobby.players.map(p => {
+                const isMe = p.nickname.toLowerCase() === me;
+                const badge = p.isHost ? '<span class="text-amber-400">👑</span>' : '';
+                const state_ = p.isConnected
+                    ? (lobby.phase === 'Playing'
+                        ? (p.isAlive ? '<span class="text-emerald-400">в игре</span>' : '<span class="text-slate-500">выбыл</span>')
+                        : '<span class="text-emerald-400">готов</span>')
+                    : '<span class="text-slate-600">отключён</span>';
+
+                return `
+                    <div class="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-xl px-3 py-2">
+                        <div class="flex items-center gap-2 min-w-0">
+                            ${badge}
+                            <span class="text-sm font-bold truncate ${isMe ? 'text-sky-300' : 'text-slate-200'}">${escapeHtml(p.nickname)}</span>
+                        </div>
+                        <div class="text-[10px] font-bold uppercase tracking-wide">${state_}</div>
+                    </div>`;
+            }).join('') || '<div class="text-xs text-slate-500">Пока никого</div>';
+
+            $('hostControls').classList.toggle('hidden', !isHost);
+            $('guestNote').classList.toggle('hidden', isHost);
+
+            $('difficultySelect').value = lobby.settings.difficulty;
+            $('biomeModeSelect').value = lobby.settings.biomeMode;
+
+            if ($('biomeIndexSelect').options.length !== BIOME_NAMES.length) {
+                fillBiomeOptions(BIOME_NAMES.length);
+            }
+            $('biomeIndexSelect').value = String(lobby.settings.biomeIndex);
+            $('biomeIndexRow').classList.toggle('hidden', lobby.settings.biomeMode !== 'fixed');
+
+            const others = connected.filter(p => p.nickname.toLowerCase() !== lobby.hostNickname.toLowerCase());
+            $('transferSelect').innerHTML = others
+                .map(p => `<option value="${escapeHtml(p.nickname)}">${escapeHtml(p.nickname)}</option>`)
+                .join('');
+            $('transferRow').classList.toggle('hidden', others.length === 0);
+
+            const playing = lobby.phase === 'Playing';
+            $('startButton').disabled = playing || connected.length === 0;
+            $('startButton').textContent = playing ? 'РАУНД ИДЁТ' : 'СТАРТ';
+
+            $('lobbyStatus').textContent = playing
+                ? 'Раунд уже идёт — вы подключитесь со следующего.'
+                : 'Можно начинать даже одному. Ссылку отправьте друзьям.';
+        }
+
+        function fillBiomeOptions(count) {
+            $('biomeIndexSelect').innerHTML = Array.from({ length: count }, (_, i) =>
+                `<option value="${i}">${BIOME_NAMES[i] || 'Пещера'} ${i + 1}</option>`).join('');
+        }
+
+        function sendPlayerState() {
+            if (state.mode !== 'net' || !game.localAlive || !state.connection) return;
+
+            const H = playH();
+            const nx = canvas.width > 0 ? playerX() / canvas.width : 0;
+            const ny = H > 0 ? player.y / H : 0;
+
+            state.connection.invoke('PlayerState', nx, ny, game.score).catch(() => { });
+        }
+
+        /* ============================================================
+           Ввод и инициализация
+           ============================================================ */
+        window.addEventListener('keydown', event => {
+            if (event.code === 'Space') {
+                event.preventDefault();
+                jump();
+            } else if (event.code === 'KeyH') {
+                setDebugPolygons(!state.debugPolygons);
+            }
+        });
+        canvas.onclick = jump;
+
+        (function init() {
+            fillBiomeOptions(10);
+
+            const params = new URLSearchParams(location.search);
+            const lobbyParam = (params.get('lobby') || '').trim().toUpperCase();
+
+            if (lobbyParam) {
+                showScreen('onlineScreen');
+                $('joinCode').value = lobbyParam;
+                setError(state.nickname ? `Введите ник и нажмите «Войти по коду»` : '');
+            } else {
+                showScreen('menuScreen');
+            }
+
+            if (state.nickname) $('nickname').value = state.nickname;
+        })();
+    </script>
+</body>
+</html>

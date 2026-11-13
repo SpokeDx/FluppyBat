@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="SQFLUPPY2/SQFLUPPY2.csproj" />
+  <Project Path="SQFLUPPY2.Tests/SQFLUPPY2.Tests.csproj" />
+</Solution>

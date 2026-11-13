@@ -1,0 +1,32 @@
+[
+  {
+    "Code": "VUFXSZ",
+    "Name": "ghj",
+    "NameKey": "ghj",
+    "PasswordHash": null,
+    "PasswordSalt": null,
+    "HostNickname": "ghj",
+    "Players": [
+      {
+        "Nickname": "ghj",
+        "ConnectionId": null,
+        "IsAlive": false,
+        "Score": 0,
+        "TotalScore": 1,
+        "X": 0.07559375,
+        "Y": 0.8852,
+        "ReservedUntil": "2026-11-13T17:52:55.3892918+00:00"
+      }
+    ],
+    "Settings": {
+      "Difficulty": "hard",
+      "BiomeMode": "fixed",
+      "BiomeIndex": 9
+    },
+    "Phase": 0,
+    "RoundNumber": 2,
+    "Seed": 1754310211,
+    "CreatedAt": "2026-11-13T17:51:31.1258067+00:00",
+    "UpdatedAt": "2026-11-13T17:51:55.3894805+00:00"
+  }
+]
